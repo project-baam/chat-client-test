@@ -1,10 +1,19 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { io, Socket } from "socket.io-client";
 import axios from "axios";
-import { Button, TextField, List, Paper, Typography, Box } from "@mui/material";
+import {
+  Button,
+  TextField,
+  Paper,
+  Typography,
+  Box,
+  Avatar,
+} from "@mui/material";
+import { CloudDownload as CloudDownloadIcon } from "@mui/icons-material";
 import CustomChatRoomListItem from "./CustomChatRoomListItem";
 import config from "./config";
 import { ChatEvents } from "./chat-event";
+import { User } from "./user";
 
 export enum MessageType {
   TEXT = "text",
@@ -39,7 +48,94 @@ interface Message {
 const API_URL = config.apiUrl;
 const SOCKET_URL = config.socketUrl;
 
-const ChatComponentWith: React.FC = () => {
+const formatFileSize = (bytes: number) => {
+  if (bytes === 0) return "0 Bytes";
+  const k = 1024;
+  const sizes = ["Bytes", "KB", "MB", "GB", "TB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+};
+
+const FileMessage: React.FC<{ file: Message["file"] }> = ({ file }) => {
+  if (!file) return null;
+
+  const handleDownload = () => {
+    if (file.url) {
+      window.open(file.url, "_blank");
+    }
+  };
+
+  return (
+    <Box>
+      <Typography variant="body1">{file.name}</Typography>
+      <Typography variant="caption" display="block" gutterBottom>
+        {formatFileSize(file.size)}
+      </Typography>
+      {file.url ? (
+        <Button
+          variant="outlined"
+          size="small"
+          startIcon={<CloudDownloadIcon />}
+          onClick={handleDownload}
+        >
+          Download
+        </Button>
+      ) : (
+        <Typography variant="caption" color="error">
+          File not available for download
+        </Typography>
+      )}
+    </Box>
+  );
+};
+
+const MessageItem: React.FC<{ message: Message; isOwnMessage: boolean }> = ({
+  message,
+  isOwnMessage,
+}) => {
+  if (!message) return null;
+  return (
+    <Box
+      sx={{
+        display: "flex",
+        justifyContent: isOwnMessage ? "flex-end" : "flex-start",
+        mb: 2,
+      }}
+    >
+      {!isOwnMessage && (
+        <Avatar
+          src={message.sender.profileImageUrl || undefined}
+          sx={{ mr: 1 }}
+        >
+          {message.sender.name}
+        </Avatar>
+      )}
+      <Paper
+        sx={{
+          p: 1,
+          backgroundColor: isOwnMessage ? "primary.light" : "grey.100",
+          maxWidth: "70%",
+        }}
+      >
+        {!isOwnMessage && (
+          <Typography variant="caption" display="block" gutterBottom>
+            {message.sender.name}
+          </Typography>
+        )}
+        {message.type === MessageType.TEXT ? (
+          <Typography variant="body1">{message.content}</Typography>
+        ) : (
+          <FileMessage file={message.file} />
+        )}
+        <Typography variant="caption" display="block" align="right">
+          {new Date(message.sentAt).toLocaleTimeString()}
+        </Typography>
+      </Paper>
+    </Box>
+  );
+};
+
+const ChatComponent: React.FC = () => {
   const [socket, setSocket] = useState<Socket | null>(null);
   const [authToken, setAuthToken] = useState<string>("");
   const [chatRooms, setChatRooms] = useState<ChatRoom[]>([]);
@@ -48,6 +144,24 @@ const ChatComponentWith: React.FC = () => {
   const [inputMessage, setInputMessage] = useState<string>("");
   const [file, setFile] = useState<File | null>(null);
   const [isConnected, setIsConnected] = useState<boolean>(false);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+
+  useEffect(() => {
+    const fetchUserInfo = async () => {
+      try {
+        const response = await axios.get(`${API_URL}/user`, {
+          headers: { Authorization: `Bearer ${authToken}` },
+        });
+        setCurrentUser(response.data);
+      } catch (error) {
+        console.error("Error fetching user info:", error);
+      }
+    };
+
+    if (authToken) {
+      fetchUserInfo();
+    }
+  }, [authToken]);
 
   const connectSocket = useCallback(() => {
     if (authToken) {
@@ -157,19 +271,7 @@ const ChatComponentWith: React.FC = () => {
         }
       );
 
-      console.log("Message emit completed");
-
-      // 소켓 상태 확인
-      console.log("Socket connected:", socket.connected);
-      console.log("Socket id:", socket.id);
-
       setInputMessage("");
-    } else {
-      console.error("Cannot send message:", {
-        socketConnected: !!socket,
-        inputMessage,
-        currentRoom,
-      });
     }
   };
 
@@ -181,14 +283,11 @@ const ChatComponentWith: React.FC = () => {
         fileSize: file.size,
       });
 
-      console.log("File:", file);
-      // File을 ArrayBuffer로 변환
       const reader = new FileReader();
       reader.onload = (e) => {
         if (e.target && e.target.result) {
           const arrayBuffer = e.target.result as ArrayBuffer;
 
-          // Socket.IO를 통해 파일 데이터 전송
           socket.emit(
             ChatEvents.FromClient.SendFileMessage,
             {
@@ -207,15 +306,6 @@ const ChatComponentWith: React.FC = () => {
         }
       };
       reader.readAsArrayBuffer(file);
-    } else {
-      console.error("Cannot send file message:", {
-        socketConnected: !!socket,
-        fileSelected: !!file,
-        currentRoom,
-      });
-      console.log("socket", socket);
-      console.log(file);
-      console.log(currentRoom);
     }
   }, [socket, file, currentRoom]);
 
@@ -228,6 +318,7 @@ const ChatComponentWith: React.FC = () => {
     setCurrentRoom(null);
     setMessages([]);
     setIsConnected(false);
+    setCurrentUser(null);
     console.log("Exited chat application");
   };
 
@@ -280,13 +371,13 @@ const ChatComponentWith: React.FC = () => {
               <Button onClick={leaveRoom} variant="contained" color="secondary">
                 해당 채팅방 나가기
               </Button>
-              <Box sx={{ maxHeight: 200, overflow: "auto", mb: 2 }}>
+              <Box sx={{ maxHeight: 300, overflow: "auto", mb: 2 }}>
                 {messages.map((msg, index) => (
-                  <Typography key={index}>
-                    {msg.type === MessageType.TEXT
-                      ? `${msg.sender.name}: ${msg.content}`
-                      : `${msg.sender.name}: ${msg.file?.name}`}
-                  </Typography>
+                  <MessageItem
+                    key={index}
+                    message={msg}
+                    isOwnMessage={currentUser?.id === msg.sender.id}
+                  />
                 ))}
               </Box>
               <TextField
@@ -326,4 +417,4 @@ const ChatComponentWith: React.FC = () => {
   );
 };
 
-export default ChatComponentWith;
+export default ChatComponent;
