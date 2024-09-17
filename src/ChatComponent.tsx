@@ -115,22 +115,29 @@ const ChatComponentWith: React.FC = () => {
     }
   };
 
-  const joinRoom = (roomId: string) => {
-    if (socket && roomId) {
-      socket.emit(ChatEvents.FromClient.JoinRoom, { roomId });
-      setCurrentRoom(roomId);
-      console.log(`Joined room: ${roomId}`);
-    }
-  };
-
-  const leaveRoom = () => {
+  const leaveRoom = useCallback(() => {
     if (socket && currentRoom) {
+      console.log(`Leaving room: ${currentRoom}`);
       socket.emit(ChatEvents.FromClient.LeaveRoom, { roomId: currentRoom });
-      console.log(`Left room: ${currentRoom}`);
       setCurrentRoom(null);
       setMessages([]);
     }
-  };
+  }, [socket, currentRoom]);
+
+  const joinRoom = useCallback(
+    (roomId: string) => {
+      if (socket && roomId) {
+        if (currentRoom) {
+          leaveRoom();
+        }
+        console.log(`Joining room: ${roomId}`);
+        socket.emit(ChatEvents.FromClient.JoinRoom, { roomId });
+        setCurrentRoom(roomId);
+        setMessages([]);
+      }
+    },
+    [socket, currentRoom, leaveRoom]
+  );
 
   const sendTextMessage = () => {
     if (socket && inputMessage && currentRoom) {
@@ -166,26 +173,51 @@ const ChatComponentWith: React.FC = () => {
     }
   };
 
-  const sendFileMessage = async () => {
+  const sendFileMessage = useCallback(() => {
     if (socket && file && currentRoom) {
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("roomId", currentRoom);
+      console.log("Attempting to send file message:", {
+        roomId: currentRoom,
+        fileName: file.name,
+        fileSize: file.size,
+      });
 
-      try {
-        await axios.post(`${API_URL}/chat/upload`, formData, {
-          headers: {
-            "Content-Type": "multipart/form-data",
-            Authorization: `Bearer ${authToken}`,
-          },
-        });
-        console.log("File uploaded");
-        setFile(null);
-      } catch (error) {
-        console.error("Error uploading file:", error);
-      }
+      console.log("File:", file);
+      // File을 ArrayBuffer로 변환
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        if (e.target && e.target.result) {
+          const arrayBuffer = e.target.result as ArrayBuffer;
+
+          // Socket.IO를 통해 파일 데이터 전송
+          socket.emit(
+            ChatEvents.FromClient.SendFileMessage,
+            {
+              roomId: currentRoom,
+              fileName: file.name,
+              fileType: file.type,
+              fileSize: file.size,
+              fileData: arrayBuffer,
+            },
+            (acknowledgement: any) => {
+              console.log("Server acknowledged file message:", acknowledgement);
+            }
+          );
+
+          setFile(null);
+        }
+      };
+      reader.readAsArrayBuffer(file);
+    } else {
+      console.error("Cannot send file message:", {
+        socketConnected: !!socket,
+        fileSelected: !!file,
+        currentRoom,
+      });
+      console.log("socket", socket);
+      console.log(file);
+      console.log(currentRoom);
     }
-  };
+  }, [socket, file, currentRoom]);
 
   const exitChatApplication = () => {
     if (socket) {
@@ -238,6 +270,7 @@ const ChatComponentWith: React.FC = () => {
                 key={room.id}
                 room={room}
                 onJoinRoom={joinRoom}
+                isActive={room.id === currentRoom}
               />
             ))}
           </Box>

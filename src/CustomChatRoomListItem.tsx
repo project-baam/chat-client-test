@@ -19,15 +19,20 @@ interface ChatRoom {
 interface CustomChatRoomListItemProps {
   room: ChatRoom;
   onJoinRoom: (roomId: string) => void;
+  isActive: boolean;
 }
 
 const CustomChatRoomListItem: React.FC<CustomChatRoomListItemProps> = ({
   room,
   onJoinRoom,
+  isActive,
 }) => {
   return (
     <ListItem disablePadding>
-      <ListItemButton onClick={() => onJoinRoom(room.id)}>
+      <ListItemButton
+        onClick={() => onJoinRoom(room.id)}
+        sx={{ backgroundColor: isActive ? "rgba(0, 0, 0, 0.04)" : "inherit" }}
+      >
         <Box sx={{ width: "100%" }}>
           <Box
             sx={{
@@ -36,7 +41,11 @@ const CustomChatRoomListItem: React.FC<CustomChatRoomListItemProps> = ({
               alignItems: "center",
             }}
           >
-            <Typography variant="subtitle1" component="div">
+            <Typography
+              variant="subtitle1"
+              component="div"
+              fontWeight={isActive ? "bold" : "normal"}
+            >
               {room.name}
             </Typography>
             <Typography variant="caption" color="text.secondary">
