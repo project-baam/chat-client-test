@@ -18,6 +18,7 @@ import { User } from "./user";
 export enum MessageType {
   TEXT = "text",
   FILE = "file",
+  SYSTEM = "system",
 }
 
 interface ChatRoom {
@@ -31,7 +32,7 @@ interface ChatRoom {
 
 interface Message {
   type: MessageType;
-  sender: {
+  sender?: {
     id: number;
     name: string;
     profileImageUrl?: string | null;
@@ -47,6 +48,32 @@ interface Message {
 
 const API_URL = config.apiUrl;
 const SOCKET_URL = config.socketUrl;
+
+const renderMessage = (message: Message) => {
+  switch (message.type) {
+    case MessageType.TEXT:
+      return <Typography variant="body1">{message.content}</Typography>;
+    case MessageType.FILE:
+      return <FileMessage file={message.file} />;
+    case MessageType.SYSTEM:
+      return (
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center",
+            height: "100%",
+          }}
+        >
+          <Typography variant="caption" color="textSecondary">
+            {message.content}
+          </Typography>
+        </div>
+      );
+    default:
+      return null;
+  }
+};
 
 const formatFileSize = (bytes: number) => {
   if (bytes === 0) return "0 Bytes";
@@ -93,6 +120,7 @@ const MessageItem: React.FC<{ message: Message; isOwnMessage: boolean }> = ({
   message,
   isOwnMessage,
 }) => {
+  console.log(message, isOwnMessage)
   if (!message) return null;
   return (
     <Box
@@ -104,10 +132,10 @@ const MessageItem: React.FC<{ message: Message; isOwnMessage: boolean }> = ({
     >
       {!isOwnMessage && (
         <Avatar
-          src={message.sender.profileImageUrl || undefined}
+          src={message.sender?.profileImageUrl || undefined}
           sx={{ mr: 1 }}
         >
-          {message.sender.name}
+          {message.sender?.name}
         </Avatar>
       )}
       <Paper
@@ -119,14 +147,11 @@ const MessageItem: React.FC<{ message: Message; isOwnMessage: boolean }> = ({
       >
         {!isOwnMessage && (
           <Typography variant="caption" display="block" gutterBottom>
-            {message.sender.name}
+            {message.sender?.name}
           </Typography>
         )}
-        {message.type === MessageType.TEXT ? (
-          <Typography variant="body1">{message.content}</Typography>
-        ) : (
-          <FileMessage file={message.file} />
-        )}
+        {renderMessage(message)}
+
         <Typography variant="caption" display="block" align="right">
           {new Date(message.sentAt).toLocaleTimeString()}
         </Typography>
@@ -376,7 +401,10 @@ const ChatComponent: React.FC = () => {
                   <MessageItem
                     key={index}
                     message={msg}
-                    isOwnMessage={currentUser?.id === msg.sender.id}
+                    isOwnMessage={
+                      // msg.type !== MessageType.SYSTEM &&
+                      currentUser?.id === msg.sender?.id
+                    }
                   />
                 ))}
               </Box>
